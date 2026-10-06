@@ -53,4 +53,19 @@ export class AccountAggregate extends AggregateRoot {
   public getBalance(): number {
     return this.balance;
   }
+  public getSnapshotData(): any {
+    return {
+      balance: this.balance,
+      currency: this.currency,
+      isOpen: this.isOpen
+    };
+  }
+
+  // Imports a past snapshot so we don't start from 0
+  public restoreFromSnapshot(version: number, data: any): void {
+    this.version = version;
+    this.balance = data.balance;
+    this.currency = data.currency;
+    this.isOpen = data.isOpen;
+  }
 }

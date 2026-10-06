@@ -4,32 +4,59 @@ import { DomainEvent } from '../core/DomainEvent';
 import { AccountCreated } from '../account/events/AccountCreated';
 import { MoneyDeposited } from '../account/events/MoneyDeposited';
 import { MoneyWithdrawn } from '../account/events/MoneyWithdrawn';
+import { AccountProjection } from './AccountProjection';
 
 export class AccountRepository {
+  private projection = new AccountProjection();
+
   public async save(aggregate: AccountAggregate): Promise<void> {
     const uncommittedEvents = aggregate.getUncommittedEvents();
     if (uncommittedEvents.length === 0) return;
 
     const client = await pool.connect();
     try {
-      await client.query('BEGIN'); // Start SQL Transaction
+      await client.query('BEGIN');
 
       let currentVersion = aggregate.version;
 
       for (const event of uncommittedEvents) {
-        currentVersion++; // Increment version for each new event
-
+        currentVersion++;
+        
+        // 1. Save to the Event Log
         await client.query(
           `INSERT INTO events (stream_id, version, event_type, payload, timestamp) 
            VALUES ($1, $2, $3, $4, $5)`,
           [aggregate.id, currentVersion, event.type, event.data, event.timestamp]
         );
+        
+       await client.query(
+          `INSERT INTO outbox_events (event_type, payload, timestamp) 
+           VALUES ($1, $2, $3)`,
+          [event.type, event.data, event.timestamp]
+        );
+
+      }
+      const SNAPSHOT_INTERVAL = 5;
+      if (
+        Math.floor(currentVersion / SNAPSHOT_INTERVAL) > 
+        Math.floor(aggregate.version / SNAPSHOT_INTERVAL)
+      ) {
+        const snapshotData = aggregate.getSnapshotData();
+        
+        await client.query(
+          `INSERT INTO snapshots (stream_id, version, payload, timestamp) 
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (stream_id) DO UPDATE SET 
+             version = EXCLUDED.version, 
+             payload = EXCLUDED.payload, 
+             timestamp = EXCLUDED.timestamp`,
+          [aggregate.id, currentVersion, snapshotData]
+        );
+        console.log(`[Snapshot] Took snapshot at version ${currentVersion}`);
       }
 
       await client.query('COMMIT');
       aggregate.markChangesAsCommitted();
-      
-      // Update the aggregate's internal version tracker after saving
       aggregate.version = currentVersion; 
     } catch (error) {
       await client.query('ROLLBACK');
@@ -40,32 +67,41 @@ export class AccountRepository {
   }
 
   public async load(accountId: string): Promise<AccountAggregate> {
-    const result = await pool.query(
-      `SELECT * FROM events WHERE stream_id = $1 ORDER BY version ASC`,
+    const aggregate = new AccountAggregate(accountId);
+    let startVersion = 0;
+
+    // 1. Try to load the latest snapshot
+    const snapshotResult = await pool.query(
+      `SELECT * FROM snapshots WHERE stream_id = $1`,
       [accountId]
     );
 
-    const aggregate = new AccountAggregate(accountId);
-    
-    if (result.rows.length === 0) {
-      return aggregate; // Return an empty aggregate if no history exists
+    if (snapshotResult.rows.length > 0) {
+      const snapshot = snapshotResult.rows[0];
+      aggregate.restoreFromSnapshot(snapshot.version, snapshot.payload);
+      startVersion = snapshot.version;
+      console.log(`[Repository] Loaded snapshot at version ${startVersion}`); // We only need events AFTER this version
     }
 
-    const history: DomainEvent[] = result.rows.map((row) => {
-      // Reconstruct the correct TypeScript class based on the database column
-      switch (row.event_type) {
-        case 'AccountCreated':
-          return new AccountCreated(row.payload);
-        case 'MoneyDeposited':
-          return new MoneyDeposited(row.payload);
-        case 'MoneyWithdrawn':
-          return new MoneyWithdrawn(row.payload);
-        default:
-          throw new Error(`Unknown event type: ${row.event_type}`);
-      }
-    });
+    // 2. Load only the events that occurred after the snapshot
+    const eventsResult = await pool.query(
+      `SELECT * FROM events WHERE stream_id = $1 AND version > $2 ORDER BY version ASC`,
+      [accountId, startVersion]
+    );
 
-    aggregate.loadFromHistory(history);
+    // 3. Replay the tail events
+    if (eventsResult.rows.length > 0) {
+      const history: DomainEvent[] = eventsResult.rows.map((row) => {
+        switch (row.event_type) {
+          case 'AccountCreated': return new AccountCreated(row.payload);
+          case 'MoneyDeposited': return new MoneyDeposited(row.payload);
+          case 'MoneyWithdrawn': return new MoneyWithdrawn(row.payload);
+          default: throw new Error(`Unknown event type: ${row.event_type}`);
+        }
+      });
+      aggregate.loadFromHistory(history);
+    }
+
     return aggregate;
   }
 }
