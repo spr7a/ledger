@@ -1,4 +1,5 @@
 import express from 'express';
+import { redisClient } from './infrastructure/redis';
 import { initializeDatabase } from './infrastructure/db';
 import { OutboxWorker } from './infrastructure/OutboxWorker';
 import { ProjectionConsumer } from './infrastructure/KafkaConsumer';
@@ -11,6 +12,8 @@ const PORT = 3000;
 async function bootstrap() {
   await initializeDatabase();
   console.log('Database initialized.');
+  await redisClient.connect();
+  console.log('Redis connected.');
 
   // 1. Connect Kafka Producer and Consumer
   await producer.connect();

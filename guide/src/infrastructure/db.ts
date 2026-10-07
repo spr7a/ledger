@@ -49,4 +49,10 @@ export async function initializeDatabase() {
       timestamp TIMESTAMP DEFAULT NOW()
     );
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS idempotency_keys (
+      key VARCHAR(255) PRIMARY KEY,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
 }
