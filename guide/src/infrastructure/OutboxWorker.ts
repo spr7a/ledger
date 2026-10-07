@@ -1,4 +1,5 @@
 import { pool } from './db';
+import { producer } from './kafka';
 import { AccountProjection } from './AccountProjection';
 
 export class OutboxWorker {
@@ -29,8 +30,16 @@ export class OutboxWorker {
           timestamp: row.timestamp
         };
 
-        // 3. Update the Read Model
-        await this.projection.handle(event);
+        // 1. Publish to Kafka
+        await producer.send({
+          topic: 'account-events',
+          messages: [
+            { 
+              key: event.data.accountId, // Ensures events for the same account stay in order
+              value: JSON.stringify(event) 
+            },
+          ],
+        });
 
         // 4. Delete the event from the outbox so we don't process it again
         await pool.query(`DELETE FROM outbox_events WHERE id = $1`, [row.id]);
