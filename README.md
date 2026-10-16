@@ -51,4 +51,3 @@ Check Balance: GET /api/accounts/:id (Cached via Redis)
 
 
 
-npx vitest run
