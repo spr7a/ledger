@@ -1,6 +1,6 @@
 # Ledger
 
-This repository contains a production-grade, event-sourced banking ledger built with TypeScript and Node.js.
+This repository contains a event-sourced banking ledger built with TypeScript and Node.js.
 
 ## Architecture Overview
 
@@ -11,7 +11,7 @@ The system is designed to handle distributed state, data integrity, and high-per
 * **Transactional Outbox:** Guarantees at-least-once message delivery to Kafka without requiring distributed two-phase commits.
 * **Idempotency:** API endpoints require an `Idempotency-Key` header to safely handle network retries and prevent duplicate transactions (e.g., double-charging).
 * **Dead Letter Queue (DLQ):** Poison messages and unparseable payloads are automatically routed to a dedicated Kafka topic to prevent consumer blocking and infinite retry loops.
-* **Write-Through Cache:** Read models are cached in Redis for ultra-low latency HTTP responses, updated silently in the background by the Kafka consumer.
+* **Cache Aside Cache:** Read models are cached in Redis for ultra-low latency HTTP responses
 
 ## Tech Stack
 
@@ -19,8 +19,6 @@ The system is designed to handle distributed state, data integrity, and high-per
 * **Primary Database:** PostgreSQL (Event Store & Read Models)
 * **Message Broker:** Apache Kafka
 * **Cache:** Redis
-* **Infrastructure:** Docker & Docker Compose
-* **Testing:** Vitest
 
 ## Prerequisites
 
@@ -78,16 +76,7 @@ curl -X POST http://localhost:3000/api/accounts/account-1/deposit \
 **Check Account Balance**
 Fetches the `account_summary` read model. Hits the Redis cache first, falling back to PostgreSQL on a cache miss.
 
-```bash
-curl http://localhost:3000/api/accounts/account-1
 
-```
-
-## Testing
-
-The core domain logic (`AccountAggregate`) is completely decoupled from the database and message broker infrastructure. This allows for instant, database-free unit testing using the Given-When-Then pattern.
-
-Execute the test suite:
 
 ```bash
 npx vitest run
