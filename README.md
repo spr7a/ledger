@@ -1,84 +1,54 @@
-# Ledger
+Event-Sourced Banking Ledger
 
-This repository contains a event-sourced banking ledger built with TypeScript and Node.js.
+A distributed banking ledger built with TypeScript and Node.js, implementing Event Sourcing, CQRS, and the Transactional Outbox pattern to guarantee data consistency.
 
-## Architecture Overview
+Tech Stack
 
-The system is designed to handle distributed state, data integrity, and high-performance requirements using the following patterns:
+Backend: TypeScript, Node.js (Express)
 
-* **Event Sourcing:** All state changes are stored as an immutable sequence of events in a PostgreSQL Event Store.
-* **CQRS (Command Query Responsibility Segregation):** Read and write operations are strictly separated. Commands append events to the store, while queries fetch data from a highly optimized relational projection.
-* **Transactional Outbox:** Guarantees at-least-once message delivery to Kafka without requiring distributed two-phase commits.
-* **Idempotency:** API endpoints require an `Idempotency-Key` header to safely handle network retries and prevent duplicate transactions (e.g., double-charging).
-* **Dead Letter Queue (DLQ):** Poison messages and unparseable payloads are automatically routed to a dedicated Kafka topic to prevent consumer blocking and infinite retry loops.
-* **Cache Aside Cache:** Read models are cached in Redis for ultra-low latency HTTP responses
+Database: PostgreSQL (Event Store & Read Models)
 
-## Tech Stack
+Message Broker: Apache Kafka
 
-* **Backend:** TypeScript, Node.js (Express)
-* **Primary Database:** PostgreSQL (Event Store & Read Models)
-* **Message Broker:** Apache Kafka
-* **Cache:** Redis
+Cache: Redis
 
-## Prerequisites
+Architecture Highlights
 
-* Docker and Docker Compose active on your host machine.
-* Node.js installed locally.
+Event Sourcing & CQRS: State changes are stored as immutable events. Read/write operations are strictly separated for performance.
 
-## Getting Started
+Transactional Outbox: Guarantees at-least-once message delivery to Kafka without distributed two-phase commits.
 
-1. **Start the Infrastructure**
-Spin up PostgreSQL, Kafka, and Redis in detached mode:
-```bash
+Optimistic Concurrency: Prevents conflicting writes using stream versioning.
+
+Idempotency & DLQ: Safe network retries and automated handling of poison messages.
+
+Getting Started
+
+Start the Infrastructure (PostgreSQL, Kafka, Redis)
+
 docker-compose up -d
 
-```
 
+Install Dependencies
 
-2. **Install Dependencies**
-```bash
 npm install
 
-```
 
+Run the Application
 
-3. **Start the Application**
-The application will automatically initialize the database schemas, connect the Kafka Consumer, and start the Outbox Worker.
-```bash
 npx tsx src/index.ts
 
-```
+
+API Endpoints
+
+Create Account: POST /api/accounts
+
+Deposit Funds: POST /api/accounts/:id/deposit (Requires Idempotency-Key header)
+
+Withdraw Funds: POST /api/accounts/:id/withdraw (Requires Idempotency-Key header)
+
+Check Balance: GET /api/accounts/:id (Cached via Redis)
 
 
 
-## API Reference
-
-**Create a New Account**
-
-```bash
-curl -X POST http://localhost:3000/api/accounts \
--H "Content-Type: application/json" \
--d '{"accountId": "account-1", "currency": "USD"}'
-
-```
-
-**Deposit Funds (Idempotent)**
-Requires a unique UUID for the `Idempotency-Key` header to prevent network retries from triggering double deposits.
-
-```bash
-curl -X POST http://localhost:3000/api/accounts/account-1/deposit \
--H "Content-Type: application/json" \
--H "Idempotency-Key: unique-request-uuid-1234" \
--d '{"amount": 1000}'
-
-```
-
-**Check Account Balance**
-Fetches the `account_summary` read model. Hits the Redis cache first, falling back to PostgreSQL on a cache miss.
-
-
-
-```bash
 npx vitest run
-
-```
